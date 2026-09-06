@@ -1,4 +1,4 @@
-﻿<Solution>
+<Solution>
     <Folder Name="/Automation/">
         <Project Path="build\Build.csproj"/>
     </Folder>

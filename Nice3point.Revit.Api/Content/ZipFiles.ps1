@@ -1,4 +1,4 @@
-﻿$assemblies = @(
+$assemblies = @(
     "AdWindows"
     "PackageContentsParser"
     "RevitAddInUtility"
