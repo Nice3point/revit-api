@@ -1,10 +1,22 @@
 <Project>
 
+    <!-- Global build configuration -->
     <PropertyGroup>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
         <ImplicitUsings>true</ImplicitUsings>
         <PlatformTarget>AnyCPU</PlatformTarget>
+        <EnableWindowsTargeting>true</EnableWindowsTargeting>
     </PropertyGroup>
+
+    <!-- Polyfill configuration -->
+    <PropertyGroup>
+        <PolyUseEmbeddedAttribute>true</PolyUseEmbeddedAttribute>
+    </PropertyGroup>
+
+    <!-- Global usings -->
+    <ItemGroup>
+        <Using Include="JetBrains.Annotations"/>
+    </ItemGroup>
 
 </Project>

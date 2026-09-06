@@ -10,8 +10,8 @@
     <PropertyGroup>
         <PackageType>Dependency</PackageType>
         <Authors>Nice3point</Authors>
-        <Description>Library for Revit plugin development</Description>
-        <PackageTags>api;autodesk;revit</PackageTags>
+        <Description>Reference assemblies for Revit plugin development</Description>
+        <PackageTags>autodesk;revit;api;references</PackageTags>
         <RepositoryType>git</RepositoryType>
         <RepositoryUrl>https://github.com/Nice3point/RevitApi</RepositoryUrl>
         <PackageProjectUrl>https://github.com/Nice3point/RevitApi</PackageProjectUrl>
