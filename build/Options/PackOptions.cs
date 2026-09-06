@@ -1,6 +1,6 @@
 namespace Build.Options;
 
-[Serializable]
+[PublicAPI]
 public sealed record PackOptions
 {
     public string ContentDirectory { get; init; } = Path.Combine("source", "Nice3point.Revit.Api", "Content");
