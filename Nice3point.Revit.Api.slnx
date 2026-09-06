@@ -1,5 +1,5 @@
 <Solution>
-    <Folder Name="/Automation/">
+    <Folder Name="/Build/">
         <Project Path="build\Build.csproj"/>
     </Folder>
     <Folder Name="/Solution Items/">
