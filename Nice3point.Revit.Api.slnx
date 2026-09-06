@@ -6,5 +6,5 @@
         <File Path="build/appsettings.json"/>
         <File Path="README.md"/>
     </Folder>
-    <Project Path="Nice3point.Revit.Api\Nice3point.Revit.Api.csproj"/>
+    <Project Path="source\Nice3point.Revit.Api\Nice3point.Revit.Api.csproj"/>
 </Solution>

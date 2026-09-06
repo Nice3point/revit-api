@@ -21,9 +21,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <None Include="..\.nuget\PackageIcon.png" PackagePath="images\" Pack="true"/>
-        <None Include="..\LICENSE.md" PackagePath="" Pack="true"/>
-        <None Include="..\README.md" PackagePath="" Pack="true"/>
+        <None Include="..\..\.nuget\PackageIcon.png" PackagePath="images\" Pack="true"/>
+        <None Include="..\..\LICENSE.md" PackagePath="" Pack="true"/>
+        <None Include="..\..\README.md" PackagePath="" Pack="true"/>
         <Content Include="Content\$(Version)\$(LibraryName).*" PackagePath="ref\$(TargetFramework)\"/>
     </ItemGroup>
 
