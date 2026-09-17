@@ -8,6 +8,7 @@
 
     <ItemGroup>
         <PackageReference Include="Sourcy.DotNet"/>
+        <PackageReference Include="SharpCompress"/>
         <PackageReference Include="Shouldly"/>
         <PackageReference Include="ModularPipelines"/>
         <PackageReference Include="ModularPipelines.Git"/>

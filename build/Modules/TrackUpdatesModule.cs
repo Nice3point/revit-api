@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Build.Options;
+using EnumerableAsyncProcessor.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModularPipelines.Context;
@@ -22,59 +23,69 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
     /// <summary>
     ///     Compares versions by the numeric value of each digit group.
     /// </summary>
+    /// <example>2026.4.10 is greater than 2026.4.2</example>
     private static readonly StringComparer VersionComparer = StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering);
 
     protected override async Task<Issue[]?> ExecuteAsync(IModuleContext context, CancellationToken cancellationToken)
     {
-        var packagedVersions = ResolvePackagedVersions(context);
-        packagedVersions.ShouldNotBeEmpty("No packaged Revit versions were found to track");
+        var trackedVersions = ResolveTrackedVersions(context);
+        trackedVersions.ShouldNotBeEmpty("No packaged Revit versions were found to track");
 
-        var updates = new List<RevitUpdate>();
-        foreach (var packagedVersion in packagedVersions)
+        var publishedUpdates = await trackedVersions
+            .SelectAsync(async version => await FetchLatestUpdateAsync(context, version, cancellationToken), cancellationToken)
+            .ProcessInParallel();
+
+        var updates = publishedUpdates.OfType<RevitUpdate>().ToArray();
+        foreach (var update in updates.Where(update => !IsOutdated(update)))
         {
-            var update = await FetchLatestUpdateAsync(context, packagedVersion, cancellationToken);
-            if (update is null)
-            {
-                context.Logger.LogInformation("Revit {Version} has no published updates", packagedVersion[..4]);
-                continue;
-            }
-
-            if (!IsOutdated(update))
-            {
-                context.Logger.LogInformation("Revit {Version} is up to date with the {Release} update", update.Version, update.Release);
-                continue;
-            }
-
-            updates.Add(update);
+            context.Logger.LogInformation("Revit {Version} is up to date with the {Release} update", update.Version, update.Release);
         }
 
-        return await ReportUpdatesAsync(context, updates);
+        return await ReportUpdatesAsync(context, updates.Where(IsOutdated).ToArray());
     }
 
     /// <summary>
-    ///     Resolve the latest packaged version of each Revit version.
+    ///     Resolve the latest packaged version of each Revit version, followed by the version Autodesk releases next.
     /// </summary>
-    private string[] ResolvePackagedVersions(IModuleContext context)
+    private RevitVersion[] ResolveTrackedVersions(IModuleContext context)
     {
-        return context.Git().RootDirectory
+        var packagedVersions = context.Git().RootDirectory
             .GetFolder(packOptions.Value.ContentDirectory)
             .ListFolders()
             .Select(folder => folder.Name)
             .GroupBy(version => version[..4])
-            .Select(versions => versions.Max(VersionComparer)!)
+            .Select(versions => new RevitVersion
+            {
+                Version = versions.Key,
+                PackagedVersion = versions.Max(VersionComparer)!
+            })
             .ToArray();
+
+        var latestVersion = packagedVersions.MaxBy(version => version.Version, VersionComparer)!;
+        var nextVersion = int.Parse(latestVersion.Version, CultureInfo.InvariantCulture) + 1;
+
+        return
+        [
+            .. packagedVersions,
+            new RevitVersion
+            {
+                Version = nextVersion.ToString(CultureInfo.InvariantCulture),
+                PackagedVersion = null
+            }
+        ];
     }
 
     /// <summary>
     ///     Read the latest update Autodesk published for the specified Revit version.
     /// </summary>
     /// <returns><c>null</c> when Autodesk publishes no release notes for that version.</returns>
-    private async Task<RevitUpdate?> FetchLatestUpdateAsync(IModuleContext context, string packagedVersion, CancellationToken cancellationToken)
+    private async Task<RevitUpdate?> FetchLatestUpdateAsync(IModuleContext context, RevitVersion trackedVersion, CancellationToken cancellationToken)
     {
-        var indexUrl = string.Format(trackOptions.Value.ReleaseNotesUrl, packagedVersion[..4]);
+        var indexUrl = string.Format(trackOptions.Value.ReleaseNotesUrl, trackedVersion.Version);
         var indexPage = await ReadPageAsync(context, indexUrl, cancellationToken);
         if (indexPage is null)
         {
+            context.Logger.LogInformation("Revit {Version} has no release notes", trackedVersion.Version);
             return null;
         }
 
@@ -84,7 +95,7 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
             return null;
         }
 
-        var latestLink = releaseLinks.MaxBy(link => ToPackageVersion(ToRelease(link)), VersionComparer)!;
+        var latestLink = releaseLinks.MaxBy(ToRelease, VersionComparer)!;
         var releaseUrl = indexUrl[..(indexUrl.LastIndexOf('/') + 1)] + latestLink.Value;
         var releasePage = await ReadPageAsync(context, releaseUrl, cancellationToken);
         if (releasePage is null)
@@ -93,16 +104,16 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
         }
 
         var releaseDate = ReleaseDateRegex().Match(releasePage);
-        var release = ToRelease(latestLink);
+        var build = BuildRegex().Match(releasePage).Groups["build"].Value;
         return new RevitUpdate
         {
-            Version = packagedVersion[..4],
-            Release = release,
-            ReleaseVersion = ToPackageVersion(release),
+            Version = trackedVersion.Version,
+            Release = ToRelease(latestLink),
+            ReleaseVersion = ToPackagedVersion(trackedVersion.Version, build),
             ReleaseDate = releaseDate.Success ? releaseDate.Groups["date"].Value.Trim() : null,
             ReleaseNotesUrl = releaseUrl,
-            Build = BuildRegex().Match(releasePage).Groups["build"].Value,
-            PackagedVersion = packagedVersion
+            Build = build,
+            PackagedVersion = trackedVersion.PackagedVersion
         };
     }
 
@@ -124,24 +135,20 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
     /// <summary>
     ///     Extract the release from a release notes link.
     /// </summary>
-    /// <example>2026updates/RevitReleaseNotes_2026updates_2026_5_html.html becomes 2026.5</example>
+    /// <example>2026updates/RevitReleaseNotes_2026updates_2026_5_html.html resolves as 2026.5</example>
     private static string ToRelease(Match releaseLink)
     {
         return releaseLink.Groups["release"].Value.Replace('_', '.');
     }
 
     /// <summary>
-    ///     Translate an Autodesk release into a package version.
+    ///     Translate the build of an update into the version the packages follow.
     /// </summary>
-    /// <remarks>The patch number takes a trailing zero. The last digit numbers the repackaging of the same update.</remarks>
-    /// <example>
-    ///     2026.5 becomes 2026.5.0 <br />
-    ///     2026.4.1 becomes 2026.4.10
-    /// </example>
-    private static string ToPackageVersion(string release)
+    /// <example>Version 2026 and build 26.5.0.55 resolves as 2026.5.0</example>
+    private static string ToPackagedVersion(string version, string build)
     {
-        var releaseParts = release.Split('.');
-        return releaseParts.Length < 3 ? $"{release}.0" : $"{releaseParts[0]}.{releaseParts[1]}.{releaseParts[2]}0";
+        var buildParts = build.Split('.');
+        return $"{version}.{buildParts[1]}.{buildParts[2]}";
     }
 
     /// <summary>
@@ -149,13 +156,13 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
     /// </summary>
     private static bool IsOutdated(RevitUpdate update)
     {
-        return VersionComparer.Compare(update.ReleaseVersion, update.PackagedVersion) > 0;
+        return update.PackagedVersion is null || VersionComparer.Compare(update.ReleaseVersion, update.PackagedVersion) > 0;
     }
 
     /// <summary>
     ///     Create an issue for every update that has none.
     /// </summary>
-    private async Task<Issue[]> ReportUpdatesAsync(IModuleContext context, List<RevitUpdate> updates)
+    private async Task<Issue[]> ReportUpdatesAsync(IModuleContext context, RevitUpdate[] updates)
     {
         var repositoryInfo = context.GitHub().RepositoryInfo;
         var reportedIssues = await context.GitHub().Client.Issue.GetAllForRepository(repositoryInfo.Owner, repositoryInfo.RepositoryName, new RepositoryIssueRequest
@@ -199,7 +206,9 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
 
     private static string CreateIssueTitle(RevitUpdate update)
     {
-        return $"Update the Revit {update.Version} packages to {update.Release}";
+        return update.PackagedVersion is null
+            ? $"Add the Revit {update.Version} packages"
+            : $"Update the Revit {update.Version} packages to {update.Release}";
     }
 
     private static string CreateIssueBody(RevitUpdate update)
@@ -208,9 +217,13 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
             ? $"Autodesk released the Revit {update.Release} update."
             : $"Autodesk released the Revit {update.Release} update on {update.ReleaseDate}.";
 
+        var packaged = update.PackagedVersion is null
+            ? $"Revit {update.Version} is not packaged yet."
+            : $"The latest packaged version is {update.PackagedVersion}.";
+
         return $"""
                 {release}
-                The latest packaged version is {update.PackagedVersion}.
+                {packaged}
 
                 - Package version: {update.ReleaseVersion}
                 - Build: {update.Build}
@@ -229,7 +242,7 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
     ///     Matches the day the update was published.
     /// </summary>
     /// <example>Release Date: August 6, 2026</example>
-    [GeneratedRegex("Release Date:(?<date>[^<]+)<")]
+    [GeneratedRegex(@"Release Date:(?<date>[^<]+)<")]
     private static partial Regex ReleaseDateRegex();
 
     /// <summary>
@@ -238,6 +251,21 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
     /// <example>26.5.0.55</example>
     [GeneratedRegex(@"<li>(?<build>\d+(?:\.\d+){3})</li>")]
     private static partial Regex BuildRegex();
+
+    private sealed record RevitVersion
+    {
+        /// <summary>
+        ///     The Revit version.
+        /// </summary>
+        /// <example>2026</example>
+        public required string Version { get; init; }
+
+        /// <summary>
+        ///     The latest version packaged for it, absent while the repository packages none.
+        /// </summary>
+        /// <example>2026.4.10</example>
+        public required string? PackagedVersion { get; init; }
+    }
 }
 
 public sealed record RevitUpdate
@@ -258,12 +286,9 @@ public sealed record RevitUpdate
     public required string Release { get; init; }
 
     /// <summary>
-    ///     The release translated into a package version.
+    ///     The release in the version scheme the packages follow.
     /// </summary>
-    /// <example>
-    ///     2026.5.0 <br />
-    ///     2026.4.10
-    /// </example>
+    /// <example>2026.5.0</example>
     public required string ReleaseVersion { get; init; }
 
     /// <summary>
@@ -285,8 +310,8 @@ public sealed record RevitUpdate
     public required string Build { get; init; }
 
     /// <summary>
-    ///     The latest packaged version of this Revit version.
+    ///     The latest packaged version of this Revit version, absent while the repository packages none.
     /// </summary>
     /// <example>2026.4.10</example>
-    public required string PackagedVersion { get; init; }
+    public required string? PackagedVersion { get; init; }
 }

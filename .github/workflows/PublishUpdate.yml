@@ -1,0 +1,41 @@
+name: Publish update
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Autodesk update installer URL'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ubuntu:
+    name: ubuntu-latest
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Cache packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'Directory.Packages.props') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Publish update
+        run: dotnet run -c Release -- update
+        working-directory: "build"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          Update__Url: ${{ inputs.url }}

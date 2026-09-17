@@ -16,6 +16,7 @@ builder.Services.Configure<PackOptions>(builder.Configuration.GetSection("Pack")
 builder.Services.Configure<NuGetOptions>(builder.Configuration.GetSection("NuGet"));
 builder.Services.Configure<PublishOptions>(builder.Configuration.GetSection("Publish"));
 builder.Services.Configure<TrackOptions>(builder.Configuration.GetSection("Track"));
+builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection("Update"));
 
 if (args.Contains("clean-nuget"))
 {
@@ -39,6 +40,12 @@ if (args.Contains("publish"))
 if (args.Contains("track"))
 {
     builder.Services.AddModule<TrackUpdatesModule>();
+}
+
+if (args.Contains("update"))
+{
+    builder.Services.AddModule<ExtractUpdateModule>();
+    builder.Services.AddModule<PublishUpdateModule>();
 }
 
 await builder.Build().RunAsync();
