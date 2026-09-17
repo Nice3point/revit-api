@@ -175,7 +175,7 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
 
         foreach (var update in updates)
         {
-            var title = CreateIssueTitle(update);
+            var title = CreateIssueTitle(update.Version, update.ReleaseVersion, update.PackagedVersion is not null);
             if (!reportedTitles.Add(title))
             {
                 context.Logger.LogInformation("The {Release} update is already reported", update.Release);
@@ -204,11 +204,15 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
         return issue;
     }
 
-    private static string CreateIssueTitle(RevitUpdate update)
+    /// <summary>
+    ///     The title the issue of an update carries.
+    /// </summary>
+    /// <remarks>The pull request of the update finds its issue under this title.</remarks>
+    internal static string CreateIssueTitle(string version, string packageVersion, bool isPackaged)
     {
-        return update.PackagedVersion is null
-            ? $"Add the Revit {update.Version} packages"
-            : $"Update the Revit {update.Version} packages to {update.ReleaseVersion}";
+        return isPackaged
+            ? $"Update the Revit {version} packages to {packageVersion}"
+            : $"Add the Revit {version} packages";
     }
 
     private static string CreateIssueBody(RevitUpdate update)

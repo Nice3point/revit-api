@@ -1,4 +1,5 @@
 using Build.Options;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModularPipelines.Attributes;
 using ModularPipelines.Context;
@@ -18,6 +19,11 @@ namespace Build.Modules;
 [DependsOn<ExtractUpdateModule>]
 public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Module<PullRequest>
 {
+    /// <summary>
+    ///     The GraphQL endpoint of GitHub, relative to the address the client holds.
+    /// </summary>
+    private static readonly Uri GraphQlEndpoint = new("graphql", UriKind.Relative);
+
     protected override async Task<PullRequest?> ExecuteAsync(IModuleContext context, CancellationToken cancellationToken)
     {
         var extractionResult = await context.GetModule<ExtractUpdateModule>();
@@ -26,7 +32,52 @@ public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Mod
 
         await CommitAsync(context, content, branch, cancellationToken);
 
-        return await CreatePullRequestAsync(context, content, branch);
+        var pullRequest = await CreatePullRequestAsync(context, content, branch);
+        await LinkIssueAsync(context, content, pullRequest, cancellationToken);
+
+        return pullRequest;
+    }
+
+    /// <summary>
+    ///     Reference the pull request from the issue the update was reported under.
+    /// </summary>
+    /// <remarks>The reference fills the Development section of the issue, and the title is what ties the two together.</remarks>
+    private static async Task LinkIssueAsync(IModuleContext context, RevitUpdateContent content, PullRequest pullRequest, CancellationToken cancellationToken)
+    {
+        var repositoryInfo = context.GitHub().RepositoryInfo;
+        var title = TrackUpdatesModule.CreateIssueTitle(content.Release, content.Version, content.ReplacedVersions.Length > 0);
+        var reportedIssues = await context.GitHub().Client.Issue.GetAllForRepository(repositoryInfo.Owner, repositoryInfo.RepositoryName, new RepositoryIssueRequest
+        {
+            State = ItemStateFilter.Open
+        });
+
+        var issue = reportedIssues.FirstOrDefault(reportedIssue => reportedIssue.Title == title);
+        if (issue is null)
+        {
+            context.Logger.LogInformation("No open issue reports the {Version} update", content.Version);
+            return;
+        }
+
+        var mutation = $$"""
+                         mutation {
+                           addCloseIssueReferences(input: {issueId: "{{issue.NodeId}}", pullRequestIds: ["{{pullRequest.NodeId}}"]}) {
+                             clientMutationId
+                           }
+                         }
+                         """;
+
+        var response = await context.GitHub().Client.Connection.Post<GraphQlResponse>(GraphQlEndpoint, new
+        {
+            query = mutation
+        }, "application/json", "application/json", parameters: null, cancellationToken);
+
+        var errors = response.Body.Errors;
+        if (errors is { Length: > 0 })
+        {
+            throw new InvalidOperationException($"Referencing issue #{issue.Number} failed: {string.Join("; ", errors.Select(error => error.Message))}");
+        }
+
+        context.Logger.LogInformation("Referenced the pull request from issue #{Number}", issue.Number);
     }
 
     /// <summary>
@@ -99,5 +150,17 @@ public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Mod
                 - Files: {content.Assemblies.Length}
                 - [Installer]({content.Url})
                 """;
+    }
+
+    [PublicAPI]
+    private sealed record GraphQlResponse
+    {
+        public GraphQlError[]? Errors { get; init; }
+    }
+
+    [PublicAPI]
+    private sealed record GraphQlError
+    {
+        public string? Message { get; init; }
     }
 }
