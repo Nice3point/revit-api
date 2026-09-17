@@ -208,7 +208,7 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
     {
         return update.PackagedVersion is null
             ? $"Add the Revit {update.Version} packages"
-            : $"Update the Revit {update.Version} packages to {update.Release}";
+            : $"Update the Revit {update.Version} packages to {update.ReleaseVersion}";
     }
 
     private static string CreateIssueBody(RevitUpdate update)
@@ -217,15 +217,18 @@ public sealed partial class TrackUpdatesModule(IOptions<PackOptions> packOptions
             ? $"Autodesk released the Revit {update.Release} update."
             : $"Autodesk released the Revit {update.Release} update on {update.ReleaseDate}.";
 
-        var packaged = update.PackagedVersion is null
-            ? $"Revit {update.Version} is not packaged yet."
-            : $"The latest packaged version is {update.PackagedVersion}.";
+        string[] summary = update.PackagedVersion is null
+            ? [release, $"Revit {update.Version} is not packaged yet."]
+            : [release];
+
+        string[] versions = update.PackagedVersion is null
+            ? [$"- New version: {update.ReleaseVersion}"]
+            : [$"- Current version: {update.PackagedVersion}", $"- New version: {update.ReleaseVersion}"];
 
         return $"""
-                {release}
-                {packaged}
+                {string.Join('\n', summary)}
 
-                - Package version: {update.ReleaseVersion}
+                {string.Join('\n', versions)}
                 - Build: {update.Build}
                 - [Release notes]({update.ReleaseNotesUrl})
                 """;

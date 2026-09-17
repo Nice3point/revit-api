@@ -39,7 +39,7 @@ public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Mod
         await context.Git().Commands.Add(new GitAddOptions
         {
             All = true,
-            Arguments = ["--", packOptions.Value.ContentDirectory]
+            Arguments = ["--", context.Git().RootDirectory.GetFolder(packOptions.Value.ContentDirectory).Path]
         }, token: cancellationToken);
 
         await context.Git().Commands.Commit(new GitCommitOptions
@@ -78,19 +78,24 @@ public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Mod
     private static string CreatePullRequestBody(RevitUpdateContent content)
     {
         var isFirstVersion = content.ReplacedVersions.Length == 0;
-        var summary = isFirstVersion
-            ? $"Revit {content.Release} enters the packaged versions at build {content.Build}."
-            : $"The Revit {content.Release} packages move to build {content.Build}.";
 
-        var replacement = isFirstVersion
-            ? $"The target framework of Revit {content.Release} is unmapped. Packing the version fails until it is set."
-            : $"The {string.Join(" and ", content.ReplacedVersions)} content is removed.";
+        string[] summary = isFirstVersion
+            ?
+            [
+                $"Adds the Revit {content.Release} packages.",
+                $"The target framework of Revit {content.Release} is unmapped. Packing the version fails until it is set."
+            ]
+            : [$"Updates the Revit {content.Release} packages."];
+
+        string[] versions = isFirstVersion
+            ? [$"- New version: {content.Version}"]
+            : [$"- Current version: {string.Join(" and ", content.ReplacedVersions)}", $"- New version: {content.Version}"];
 
         return $"""
-                {summary}
-                {replacement}
+                {string.Join('\n', summary)}
 
-                - Package version: {content.Version}
+                {string.Join('\n', versions)}
+                - Build: {content.Build}
                 - Files: {content.Assemblies.Length}
                 - [Installer]({content.Url})
                 """;
