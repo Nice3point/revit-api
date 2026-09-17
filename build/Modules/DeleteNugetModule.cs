@@ -19,7 +19,7 @@ public sealed class DeleteNugetModule(IOptions<PublishOptions> publishOptions, I
     protected override async Task<CommandResult[]?> ExecuteAsync(IModuleContext context, CancellationToken cancellationToken)
     {
         publishOptions.Value.Version.ShouldNotBeEmpty("No NuGet version was specified to delete");
-        
+
         var targetFiles = context.Git().RootDirectory
             .GetFolder(packOptions.Value.ContentDirectory)
             .GetFiles(file => file.Extension == ".dll")

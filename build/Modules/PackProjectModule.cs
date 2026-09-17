@@ -37,7 +37,7 @@ public sealed class PackProjectModule(IOptions<BuildOptions> buildOptions, IOpti
         { "2024", "net48" },
         { "2025", "net8.0-windows7.0" },
         { "2026", "net8.0-windows7.0" },
-        { "2027", "net10.0-windows7.0" },
+        { "2027", "net10.0-windows7.0" }
     };
 
     protected override async Task ExecuteModuleAsync(IModuleContext context, CancellationToken cancellationToken)
@@ -78,7 +78,7 @@ public sealed class PackProjectModule(IOptions<BuildOptions> buildOptions, IOpti
                         ("PackageId", $"Nice3point.Revit.Api.{file.NameWithoutExtension}"),
                         ("LibraryName", file.NameWithoutExtension),
                         ("RevitFramework", _revitFrameworks[version[..4]])
-                    },
+                    }
                 }, cancellationToken: cancellationToken);
             }, cancellationToken)
             .ProcessOneAtATime();
