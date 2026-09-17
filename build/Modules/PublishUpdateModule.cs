@@ -114,7 +114,41 @@ public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Mod
             Draft = true
         };
 
-        return await context.GitHub().Client.PullRequest.Create(repositoryInfo.Owner, repositoryInfo.RepositoryName, pullRequest);
+        try
+        {
+            return await context.GitHub().Client.PullRequest.Create(repositoryInfo.Owner, repositoryInfo.RepositoryName, pullRequest);
+        }
+        catch (ApiException exception)
+        {
+            var createdPullRequest = await FindPullRequestAsync(context, branch);
+            if (createdPullRequest is null)
+            {
+                throw;
+            }
+
+            context.Logger.LogInformation("GitHub returns {Status} and holds the pull request #{Number}", exception.HttpResponse.StatusCode, createdPullRequest.Number);
+            return createdPullRequest;
+        }
+    }
+
+    /// <summary>
+    ///     Read the open pull request of the branch.
+    /// </summary>
+    /// <remarks>
+    ///     A content update carries tens of megabytes, and GitHub answers it with a gateway error
+    ///     once the pull request stands. The branch is what identifies it afterwards.
+    /// </remarks>
+    /// <returns><c>null</c> when the branch carries no pull request.</returns>
+    private static async Task<PullRequest?> FindPullRequestAsync(IModuleContext context, string branch)
+    {
+        var repositoryInfo = context.GitHub().RepositoryInfo;
+        var openPullRequests = await context.GitHub().Client.PullRequest.GetAllForRepository(repositoryInfo.Owner, repositoryInfo.RepositoryName, new PullRequestRequest
+        {
+            State = ItemStateFilter.Open,
+            Head = $"{repositoryInfo.Owner}:{branch}"
+        });
+
+        return openPullRequests.FirstOrDefault(openPullRequest => openPullRequest.Head.Ref == branch);
     }
 
     /// <summary>
