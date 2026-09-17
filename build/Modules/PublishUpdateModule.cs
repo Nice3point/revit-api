@@ -111,7 +111,7 @@ public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Mod
         var pullRequest = new NewPullRequest(CreateCommitMessage(content), branch, context.Git().Information.DefaultBranchName)
         {
             Body = CreatePullRequestBody(content),
-            Draft = true
+            Draft = false
         };
 
         try
