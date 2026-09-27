@@ -1,2 +1,5 @@
 #Line endings
 * text=auto eol=lf
+
+#Packaged content
+source/Nice3point.Revit.Api/Content/**/*.xml -diff linguist-generated
