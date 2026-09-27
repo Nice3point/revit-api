@@ -112,10 +112,10 @@ public sealed partial class PublishUpdateModule(IOptions<PackOptions> packOption
         return settingRegex.Replace(settings, _ => value);
     }
 
-    [GeneratedRegex($$"""(?<="{{nameof(PackOptions.PinnedDllVersion)}}"\s*:\s*")[^"]*""")]
+    [GeneratedRegex($"""(?<="{nameof(PackOptions.PinnedDllVersion)}"\s*:\s*")[^"]*""")]
     private static partial Regex PinnedDllVersionRegex();
 
-    [GeneratedRegex($$"""(?<="{{nameof(PublishOptions.Changelog)}}"\s*:\s*")[^"]*""")]
+    [GeneratedRegex($"""(?<="{nameof(PublishOptions.Changelog)}"\s*:\s*")[^"]*""")]
     private static partial Regex ChangelogRegex();
 
     /// <summary>
