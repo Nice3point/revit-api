@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Build.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,6 +10,9 @@ using ModularPipelines.GitHub.Attributes;
 using ModularPipelines.GitHub.Extensions;
 using ModularPipelines.Modules;
 using Octokit;
+using Shouldly;
+using Sourcy.DotNet;
+using File = ModularPipelines.FileSystem.File;
 
 namespace Build.Modules;
 
@@ -17,7 +21,7 @@ namespace Build.Modules;
 /// </summary>
 [SkipIfNoGitHubToken]
 [DependsOn<ExtractUpdateModule>]
-public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Module<PullRequest>
+public sealed partial class PublishUpdateModule(IOptions<PackOptions> packOptions) : Module<PullRequest>
 {
     /// <summary>
     ///     The GraphQL endpoint of GitHub, relative to the address the client holds.
@@ -30,7 +34,8 @@ public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Mod
         var content = extractionResult.ValueOrDefault!;
         var branch = $"content/revit-{content.Version.Replace('.', '-')}";
 
-        await CommitAsync(context, content, branch, cancellationToken);
+        var settingsFile = await PinReleaseAsync(context, content, cancellationToken);
+        await CommitAsync(context, content, settingsFile, branch, cancellationToken);
 
         var pullRequest = await CreatePullRequestAsync(context, content, branch);
         await LinkIssueAsync(context, content, pullRequest, cancellationToken);
@@ -81,16 +86,49 @@ public sealed class PublishUpdateModule(IOptions<PackOptions> packOptions) : Mod
     }
 
     /// <summary>
-    ///     Commit the packaged content onto a branch of its own.
+    ///     Point the release settings at the packaged update.
     /// </summary>
-    private async Task CommitAsync(IModuleContext context, RevitUpdateContent content, string branch, CancellationToken cancellationToken)
+    /// <remarks>
+    ///     A tag on the merged update packs the version folder of the update and publishes its build as the release notes.
+    ///     The settings file keeps its layout, and only the two values change.
+    /// </remarks>
+    /// <returns>The build settings file holding the release settings.</returns>
+    private static async Task<File> PinReleaseAsync(IModuleContext context, RevitUpdateContent content, CancellationToken cancellationToken)
+    {
+        var settingsFile = context.Files.GetFile(Path.Combine(Projects.Build.DirectoryName!, "appsettings.json"));
+        var settings = await settingsFile.ReadAsync(cancellationToken);
+
+        settings = ReplaceSetting(settings, PinnedDllVersionRegex(), content.Version);
+        settings = ReplaceSetting(settings, ChangelogRegex(), CreateCommitMessage(content));
+
+        await settingsFile.WriteAsync(settings, cancellationToken);
+        return settingsFile;
+    }
+
+    [Pure]
+    private static string ReplaceSetting(string settings, Regex settingRegex, string value)
+    {
+        settingRegex.Count(settings).ShouldBe(1, $"The build settings hold no single value matching {settingRegex}");
+        return settingRegex.Replace(settings, _ => value);
+    }
+
+    [GeneratedRegex($"""(?<="{nameof(PackOptions.PinnedDllVersion)}"\s*:\s*")[^"]*""")]
+    private static partial Regex PinnedDllVersionRegex();
+
+    [GeneratedRegex($"""(?<="{nameof(PublishOptions.Changelog)}"\s*:\s*")[^"]*""")]
+    private static partial Regex ChangelogRegex();
+
+    /// <summary>
+    ///     Commit the packaged content and the release settings onto a branch of its own.
+    /// </summary>
+    private async Task CommitAsync(IModuleContext context, RevitUpdateContent content, File settingsFile, string branch, CancellationToken cancellationToken)
     {
         await context.Git().Commands.Checkout(new GitCheckoutOptions(branch, true), token: cancellationToken);
 
         await context.Git().Commands.Add(new GitAddOptions
         {
             All = true,
-            Arguments = ["--", context.Git().RootDirectory.GetFolder(packOptions.Value.ContentDirectory).Path]
+            Arguments = ["--", context.Git().RootDirectory.GetFolder(packOptions.Value.ContentDirectory).Path, settingsFile.Path]
         }, token: cancellationToken);
 
         await context.Git().Commands.Commit(new GitCommitOptions
