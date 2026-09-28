@@ -15,10 +15,11 @@ builder.Services.Configure<BuildOptions>(builder.Configuration.GetSection("Build
 builder.Services.Configure<PackOptions>(builder.Configuration.GetSection("Pack"));
 builder.Services.Configure<NuGetOptions>(builder.Configuration.GetSection("NuGet"));
 builder.Services.Configure<PublishOptions>(builder.Configuration.GetSection("Publish"));
+builder.Services.Configure<DeleteOptions>(builder.Configuration.GetSection("Delete"));
 builder.Services.Configure<TrackOptions>(builder.Configuration.GetSection("Track"));
 builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection("Update"));
 
-if (args.Contains("clean-nuget"))
+if (args.Contains("delete"))
 {
     builder.Services.AddModule<DeleteNugetModule>();
 }
