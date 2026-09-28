@@ -18,7 +18,7 @@ builder.Services.Configure<PublishOptions>(builder.Configuration.GetSection("Pub
 builder.Services.Configure<TrackOptions>(builder.Configuration.GetSection("Track"));
 builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection("Update"));
 
-if (args.Contains("clean-nuget"))
+if (args.Contains("delete"))
 {
     builder.Services.AddModule<DeleteNugetModule>();
 }
